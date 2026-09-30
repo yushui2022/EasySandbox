@@ -1,0 +1,5 @@
+# Linux-only project.  The repository is routinely mounted into WSL and the
+# scripts are executed by a Linux shell, so a CRLF checkout would break every
+# shebang (`scripts/vm-init`, `scripts/*.sh`) as well as probe.c's line
+# endings.  Force LF in the working tree on every platform.
+* text=auto eol=lf

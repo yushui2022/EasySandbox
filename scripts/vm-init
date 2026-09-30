@@ -1,0 +1,67 @@
+#!/bin/busybox sh
+set -eu
+
+mkdir -p /proc /sys /dev /run
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys 2>/dev/null || true
+/bin/busybox mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+
+echo 'easy-sandbox-vm: kernel:'
+/bin/busybox uname -a
+# The initramfs never brings loopback up; the trusted proxy needs it to reach
+# the test upstream on 127.0.0.1 (the sandbox network namespace stays down).
+/bin/busybox ip link set lo up 2>/dev/null || /bin/busybox ifconfig lo up 2>/dev/null || true
+echo 'easy-sandbox-vm: landlock-probe:'
+set +e
+/bin/landlock-probe
+status=$?
+set -e
+echo "easy-sandbox-vm: probe-status=$status"
+
+overall=$status
+
+# The launcher, its probe and the drop-privileges helper are only present when
+# validate-vm.sh was given a static easy-sandbox binary.
+if [ -x /bin/easy-sandbox ] && [ -x /bin/policy-tests.sh ] && [ -x /bin/probe ] \
+    && [ -x /bin/vm-drop-privs ]; then
+    # The sandbox launcher creates a user namespace and calls pivot_root(2).
+    # Two kernel checks make the initial ramfs unusable for that:
+    #   * unshare(CLONE_NEWUSER) fails with EPERM while the process is chrooted
+    #     (create_user_ns(): "if (current_chrooted())");
+    #   * pivot_root(2) fails with EINVAL when the current root mount has no
+    #     parent (fs/namespace.c: "if (!mnt_has_parent(root_mnt))"), which is
+    #     exactly the rootfs mount of an initramfs.
+    # Both are satisfied by the classic run-init dance: move a real (tmpfs)
+    # root onto /, chroot into it, and only then start the suite.
+    echo 'easy-sandbox-vm: switching to a tmpfs root'
+    /bin/busybox mkdir -p /newroot
+    /bin/busybox mount -t tmpfs tmpfs /newroot
+    /bin/busybox mkdir -p /newroot/bin /newroot/etc /newroot/proc /newroot/sys /newroot/dev /newroot/run
+    # The launcher puts the proxy socket in std::env::temp_dir().
+    /bin/busybox mkdir -p /newroot/tmp
+    /bin/busybox chmod 1777 /newroot/tmp
+    /bin/busybox cp -a /bin/. /newroot/bin/
+    # /etc/hosts lets the trusted proxy resolve the allowlisted test hostname.
+    /bin/busybox cp -a /etc/. /newroot/etc/ 2>/dev/null || true
+    # Fresh mounts instead of --move: the launcher's own mount namespace is a
+    # copy across user namespaces, and a new procfs mount is only allowed when
+    # the namespace already holds a fully visible procfs mount
+    # (mount_too_revealing()/mnt_already_visible() in fs/namespace.c).
+    /bin/busybox mount -t proc proc /newroot/proc
+    /bin/busybox mount -t sysfs sysfs /newroot/sys 2>/dev/null || true
+    /bin/busybox mount -t devtmpfs devtmpfs /newroot/dev
+
+    cd /newroot
+    /bin/busybox mount --move /newroot /
+    echo 'easy-sandbox-vm: policy suite:'
+    set +e
+    /bin/busybox chroot . /bin/policy-tests.sh
+    policy_status=$?
+    set -e
+    echo "easy-sandbox-vm: policy-status=$policy_status"
+    [ "$policy_status" = 0 ] || overall=$policy_status
+fi
+
+echo "easy-sandbox-vm: complete status=$overall"
+/bin/busybox poweroff -f
+exit "$overall"

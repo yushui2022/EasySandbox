@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysandbox.local/schemas/report.schema.json",
+  "title": "EasySandbox verification report",
+  "description": "Written by `easy-sandbox verify`.  Every field is part of the public contract; `v` changes when the shape changes.  A report never grants anything: it records what independent cases did against one frozen policy.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "kind", "generated_at_ms", "policy", "cases", "summary"],
+  "properties": {
+    "v": {
+      "type": "integer",
+      "const": 1,
+      "description": "Report version, matching the run-record event version."
+    },
+    "kind": {
+      "type": "string",
+      "const": "easy-sandbox-verify-report"
+    },
+    "generated_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix milliseconds, or 0 when the clock was unavailable."
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "version", "fingerprint"],
+      "properties": {
+        "path": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "fingerprint": {
+          "type": "string",
+          "description": "Change detector over the frozen document; the document itself is in the run records."
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "verdict", "duration_ms", "detail"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "expectation": {
+            "description": "Omitted means the case declared no expectation, which forces a pending verdict.",
+            "enum": ["allow", "deny"]
+          },
+          "verdict": { "enum": ["pass", "fail", "pending"] },
+          "exit_code": {
+            "type": ["integer", "null"],
+            "description": "Payload exit status; null when the payload was killed by a signal."
+          },
+          "duration_ms": { "type": "integer", "minimum": 0 },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "passed", "failed", "pending"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "pending": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

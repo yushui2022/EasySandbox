@@ -1,0 +1,6 @@
+/target/
+/smoke-result.json
+*.core
+__pycache__/
+*.pyc
+node_modules/

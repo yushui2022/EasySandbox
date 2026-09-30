@@ -1,0 +1,56 @@
+# EasySandbox policy format, version 1.
+# Paths are inside the sandbox root.  The policy is strict: unknown fields,
+# unsupported enum values, relative paths, and zero limits are rejected.
+#
+# A policy can only tighten the P0/P1 boundary, never widen it: filesystem
+# rules are intersected with the fixed mounts (a read-only rootfs and a
+# read-write /workspace), Landlock rulesets stack, and seccomp only adds denied
+# entry points.  read also grants execution, and /dev/null, /dev/zero and
+# /dev/urandom always stay usable.  Limits are a ceiling for the caller: the
+# effective value is the strictest of the launcher default, the CLI request and
+# the policy.  mode: observe and mode: verify are rejected with exit 125 until
+# the P4 pipeline exists, and network.mode: proxy until the P3 proxy does.
+version: 1
+
+filesystem:
+  read:
+    - /usr
+    - /bin
+    - /lib
+    - /lib64
+  write:
+    - /workspace
+    - /tmp
+
+network:
+  # disabled means no outbound network at all.  proxy exposes exactly one
+  # endpoint inside the sandbox -- a CONNECT proxy on /run/proxy.sock, also
+  # published as $EASY_SANDBOX_PROXY -- and requires every destination to be
+  # listed explicitly by hostname and port.  IP literals are never allowed, and
+  # the proxy resolves each name once per connection.
+  mode: disabled
+  allow: []
+  # mode: proxy with rules:
+  #   mode: proxy
+  #   allow:
+  #     - host: api.example.com
+  #       ports: [443]
+
+limits:
+  timeout_ms: 30000
+  memory_mib: 512
+  cpu_seconds: 30
+  max_processes: 64
+
+syscalls:
+  deny:
+    - mount
+    - pivot_root
+    - ptrace
+    - bpf
+    - keyctl
+
+# enforce installs every restriction above.  observe records them as
+# unapproved candidates in the JSONL run record instead, still paying for the
+# P1 baseline; a reviewer approves by switching this line back to enforce.
+mode: enforce
